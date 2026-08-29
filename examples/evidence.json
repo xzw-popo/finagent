@@ -1,0 +1,43 @@
+{
+  "evidence": [
+    {
+      "evidence_id": "ev-revenue",
+      "title": "示例公司 2025 年年度报告：收入摘要",
+      "publisher": "示例交易所",
+      "uri": "https://example.com/filings/demo-2025",
+      "locator": "第 12 页，营业收入",
+      "excerpt": "示例公司2025年度收入为120亿元，同比增长20%。",
+      "published_at": "2026-03-20T18:00:00+08:00",
+      "known_at": "2026-03-20T18:00:00+08:00",
+      "retrieved_at": "2026-03-21T09:00:00+08:00",
+      "content_sha256": "bea5a5773a059ee2cd06b647f7ed3d6e70857a34d739284e6306af245de7625c",
+      "record_sha256": "0ac9183a0519cc466689b50341f083913a79836c246466ea4f4a228df28c588d"
+    },
+    {
+      "evidence_id": "ev-cashflow",
+      "title": "示例公司 2025 年年度报告：现金流摘要",
+      "publisher": "示例交易所",
+      "uri": "https://example.com/filings/demo-2025",
+      "locator": "第 38 页，现金流量表",
+      "excerpt": "示例公司2025年度经营现金流为6亿元，低于净利润10亿元。",
+      "published_at": "2026-03-20T18:00:00+08:00",
+      "known_at": "2026-03-20T18:00:00+08:00",
+      "retrieved_at": "2026-03-21T09:00:00+08:00",
+      "content_sha256": "107203023673e0459d286709dfe6408a53459b1ae5a85f0c0ccc96a609f15208",
+      "record_sha256": "039aed96a24396dc2ad23bbdf21afcc5918c460a9db18a3fca7aab28d65e3a08"
+    },
+    {
+      "evidence_id": "ev-future-guidance",
+      "title": "示例公司 2026 年一季度业绩预告",
+      "publisher": "示例交易所",
+      "uri": "https://example.com/filings/demo-2026-q1",
+      "locator": "第 2 页，业绩预告",
+      "excerpt": "示例公司2026年第一季度收入预计同比增长80%。",
+      "published_at": "2026-04-15T18:00:00+08:00",
+      "known_at": "2026-04-15T18:00:00+08:00",
+      "retrieved_at": "2026-04-15T18:05:00+08:00",
+      "content_sha256": "b1e1a44a1847098c8c6146d6c2b71025ad2687ccb39a042d7b6f5ff35fdfae2d",
+      "record_sha256": "d3938c5e6928b3001c1d89a98d0fea18447e6e96f075b992709fa3ddeff4f340"
+    }
+  ]
+}
