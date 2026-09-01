@@ -3,17 +3,17 @@
 ## Secret handling
 
 - Never commit API keys, cookies, tokens, account identifiers, or broker credentials.
-- Prefer `finresearch run --ask-key`, which reads the DeepSeek key without echoing it.
+- Prefer `finresearch run --mode deepseek --ask-key`, which reads the DeepSeek key without echoing it.
 - `.env` files and all generated `runs/` artifacts are ignored by Git.
-- Runtime logs record provider/model names and hashes, never request headers or secrets.
+- `report.json` records provider, model, prompt version, the research question, and model-generated research content; `events.jsonl` records workflow stages, timestamps, input hashes, and stage details. Neither records request headers or API credentials by design, but research inputs and model outputs may still contain sensitive data and must be handled accordingly.
 - Longbridge OAuth credentials remain in the external Longbridge CLI credential store and are never copied into project artifacts.
 - If a key is pasted into chat, an issue, a terminal command, or a commit, revoke and rotate it.
 
 ## Capability boundary
 
-V1.2 can read and merge local evidence, call one JSON-only LLM adapter, write local reports, and explicitly collect read-only Longbridge quote snapshots. The collector resolves the installed binary itself and can execute only the fixed `quote --format json` command with validated symbols. It exposes no arbitrary subprocess arguments, broker SDK, order schema, trading endpoint, browser tool, or autonomous web fetcher.
+V1.3 can read and merge local evidence, call one JSON-only LLM adapter, write local reports, and explicitly collect read-only Longbridge quote and financial-statement snapshots. The collectors resolve the installed binary themselves and can execute only fixed `quote --format json`, `financial-statement --kind IS|BS|CF --report af|saf|qf --format json`, and optional same-frequency historical `business-segments` commands with validated symbols and arguments. They expose no arbitrary subprocess arguments, broker SDK, order schema, trading endpoint, browser tool, or autonomous web fetcher.
 
-The collector runs in a temporary directory, separates stdout from stderr, removes unrelated secrets such as `DEEPSEEK_API_KEY` from the child environment, reduces failure diagnostics to a generic classified message, limits output size, and refuses to overwrite an existing output path (including a dangling symlink). Successful-command stderr text is never persisted; the collection manifest records only its source, SHA-256 digest, and byte count.
+Each collector runs in a temporary directory, separates stdout from stderr, removes unrelated secrets such as `DEEPSEEK_API_KEY` from the child environment, reduces failure diagnostics to a generic classified message, limits output size, and refuses to overwrite an existing output path (including a dangling symlink). Successful-command stderr text is never persisted; the collection manifest records only its source, SHA-256 digest, and byte count. Financial-statement publication additionally replays raw JSON normalization, rebuilds Evidence, verifies statement currency and latest-period alignment, and rejects an `evidence.json` that would exceed the default 16 MiB merge input limit.
 
 Research runs likewise require a new output directory. They are assembled in a private staging directory, revalidate the materialized evidence bundle, and publish through an exclusively created destination so pre-existing files or symlinks are never followed.
 
