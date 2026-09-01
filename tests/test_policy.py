@@ -8,6 +8,7 @@ from finresearch.settings import DeepSeekSettings, redact_secret
 
 def test_trade_capabilities_are_not_authorized() -> None:
     policy = NoTradePolicy()
+    policy.authorize("read_market_quote")
     with pytest.raises(PermissionError):
         policy.authorize("place_order")
 

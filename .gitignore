@@ -12,4 +12,6 @@ htmlcov/
 dist/
 build/
 *.egg-info/
+longbridge*.log
+.finresearch-merge-*/
 runs/

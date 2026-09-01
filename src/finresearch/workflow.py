@@ -1,13 +1,22 @@
 from __future__ import annotations
 
 import json
+import shutil
+import tempfile
 from enum import StrEnum
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
 from finresearch.audit import AuditTrail
-from finresearch.evidence import filter_evidence_as_of, jsonable, validate_evidence_records
+from finresearch.evidence import (
+    copy_evidence_artifacts,
+    filter_evidence_as_of,
+    jsonable,
+    load_evidence,
+    validate_evidence_artifacts,
+    validate_evidence_records,
+)
 from finresearch.llm.base import LLMAdapter
 from finresearch.policy import NoTradePolicy
 from finresearch.prompts import PROMPT_VERSION
@@ -18,6 +27,7 @@ from finresearch.schemas import (
     ClaimDraft,
     ClaimDraftBatch,
     Evidence,
+    EvidenceBundle,
     GroundedStatement,
     ReportDraft,
     ResearchReport,
@@ -121,7 +131,10 @@ class ResearchWorkflow:
         request: ResearchRequest,
         evidence: list[Evidence],
         output_dir: Path,
+        evidence_artifact_dir: Path | None = None,
     ) -> ResearchReport:
+        if output_dir.exists() or output_dir.is_symlink():
+            raise FileExistsError(f"output path already exists: {output_dir}")
         machine = WorkflowStateMachine()
         audit = AuditTrail()
         run_id = str(uuid4())
@@ -131,6 +144,39 @@ class ResearchWorkflow:
         machine.transition(Stage.LOAD_AND_FILTER_EVIDENCE)
         evidence = validate_evidence_records(evidence)
         eligible, rejected = filter_evidence_as_of(request, evidence)
+        evidence_with_artifacts = [
+            item for item in eligible if item.provenance is not None
+        ]
+        reserved_paths = {
+            ("request.json",),
+            ("eligible_evidence.json",),
+            ("rejected_evidence.json",),
+            ("claims.json",),
+            ("challenge.json",),
+            ("report.json",),
+            ("events.jsonl",),
+        }
+        for item in evidence_with_artifacts:
+            assert item.provenance is not None
+            reference = tuple(
+                part.casefold() for part in Path(item.provenance.raw_artifact_ref).parts
+            )
+            if any(
+                reference == path
+                or reference[: len(path)] == path
+                or path[: len(reference)] == reference
+                for path in reserved_paths
+            ):
+                raise ValueError(
+                    f"raw artifact reference conflicts with workflow output: "
+                    f"{item.provenance.raw_artifact_ref}"
+                )
+        if evidence_with_artifacts and evidence_artifact_dir is None:
+            raise ValueError(
+                "evidence_artifact_dir is required for evidence with raw artifacts"
+            )
+        if evidence_artifact_dir is not None:
+            validate_evidence_artifacts(eligible, evidence_artifact_dir)
         evidence_ids = {item.evidence_id for item in eligible}
         model_request = _dump(request)
         model_request.pop("allowed_evidence_ids", None)
@@ -258,19 +304,42 @@ class ResearchWorkflow:
         audit.record(machine.stage, {"run_id": run_id}, {"human_review_required": True})
 
         self.policy.authorize("write_local_report")
-        output_dir.mkdir(parents=True, exist_ok=True)
         artifacts = {
             "request.json": request,
-            "eligible_evidence.json": eligible,
+            "eligible_evidence.json": EvidenceBundle(evidence=eligible),
             "rejected_evidence.json": rejected,
             "claims.json": verified,
             "challenge.json": challenge,
             "report.json": report,
         }
-        for filename, value in artifacts.items():
-            (output_dir / filename).write_text(
-                json.dumps(_dump(value), ensure_ascii=False, indent=2, sort_keys=True) + "\n",
-                encoding="utf-8",
-            )
-        audit.write(output_dir / "events.jsonl")
+        output_dir.parent.mkdir(parents=True, exist_ok=True)
+        temporary = Path(
+            tempfile.mkdtemp(prefix=f".{output_dir.name}.tmp-", dir=output_dir.parent)
+        )
+        output_created = False
+        try:
+            if evidence_artifact_dir is not None:
+                copy_evidence_artifacts(eligible, evidence_artifact_dir, temporary)
+            for filename, value in artifacts.items():
+                with (temporary / filename).open("x", encoding="utf-8") as handle:
+                    handle.write(
+                        json.dumps(
+                            _dump(value), ensure_ascii=False, indent=2, sort_keys=True
+                        )
+                        + "\n"
+                    )
+            audit.write(temporary / "events.jsonl")
+            load_evidence(temporary / "eligible_evidence.json")
+
+            output_dir.mkdir(exist_ok=False)
+            output_created = True
+            for child in temporary.iterdir():
+                child.rename(output_dir / child.name)
+            temporary.rmdir()
+        except Exception:
+            if output_created and output_dir.exists():
+                shutil.rmtree(output_dir)
+            if temporary.exists():
+                shutil.rmtree(temporary)
+            raise
         return report

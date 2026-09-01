@@ -16,6 +16,12 @@ def _require_timezone(value: datetime) -> datetime:
     return value
 
 
+def _require_optional_timezone(value: datetime | None) -> datetime | None:
+    if value is not None:
+        _require_timezone(value)
+    return value
+
+
 class ResearchRequest(StrictModel):
     request_id: str = Field(min_length=1)
     question: str = Field(min_length=8)
@@ -27,22 +33,51 @@ class ResearchRequest(StrictModel):
     _as_of_timezone = field_validator("as_of")(_require_timezone)
 
 
+class EvidenceProvenance(StrictModel):
+    provider: str = Field(min_length=1)
+    source_type: Literal["market_quote_snapshot"]
+    source_endpoint: str = Field(min_length=1)
+    symbol: str = Field(min_length=1)
+    observed_at: datetime
+    source_event_at: datetime | None = None
+    freshness: Literal["real_time", "delayed", "end_of_day", "unknown"] = "unknown"
+    raw_artifact_ref: str = Field(min_length=1)
+    raw_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    normalized_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    normalizer_version: str = Field(min_length=1)
+
+    _observed_timezone = field_validator("observed_at")(_require_timezone)
+    _source_event_timezone = field_validator("source_event_at")(
+        _require_optional_timezone
+    )
+
+    @model_validator(mode="after")
+    def validate_source_timeline(self) -> EvidenceProvenance:
+        if self.source_event_at is not None and self.source_event_at > self.observed_at:
+            raise ValueError("source_event_at must not be after observed_at")
+        return self
+
+
 class Evidence(StrictModel):
+    evidence_type: Literal["document", "market_quote_snapshot"] = "document"
     evidence_id: str = Field(min_length=1)
     title: str = Field(min_length=1)
     publisher: str = Field(min_length=1)
     uri: HttpUrl
     locator: str = Field(min_length=1)
     excerpt: str = Field(min_length=8)
-    published_at: datetime
+    published_at: datetime | None
     known_at: datetime
     retrieved_at: datetime
+    available_at: datetime | None = None
     content_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     record_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    provenance: EvidenceProvenance | None = None
 
-    _published_timezone = field_validator("published_at")(_require_timezone)
+    _published_timezone = field_validator("published_at")(_require_optional_timezone)
     _known_timezone = field_validator("known_at")(_require_timezone)
     _retrieved_timezone = field_validator("retrieved_at")(_require_timezone)
+    _available_timezone = field_validator("available_at")(_require_optional_timezone)
 
     @field_validator("uri")
     @classmethod
@@ -53,10 +88,25 @@ class Evidence(StrictModel):
 
     @model_validator(mode="after")
     def validate_timeline(self) -> Evidence:
-        if self.published_at > self.known_at:
+        if self.evidence_type == "document" and self.published_at is None:
+            raise ValueError("document evidence requires published_at")
+        if self.evidence_type == "market_quote_snapshot":
+            if self.provenance is None:
+                raise ValueError("market quote evidence requires provenance")
+            if self.published_at is not None:
+                raise ValueError("market quote snapshot published_at must be null")
+            if self.available_at is None:
+                raise ValueError("market quote evidence requires available_at")
+        if self.provenance is not None and self.provenance.source_type != self.evidence_type:
+            raise ValueError("provenance source_type must match evidence_type")
+        if self.published_at is not None and self.published_at > self.known_at:
             raise ValueError("published_at must not be after known_at")
         if self.known_at > self.retrieved_at:
             raise ValueError("known_at must not be after retrieved_at")
+        if self.available_at is not None and self.retrieved_at > self.available_at:
+            raise ValueError("retrieved_at must not be after available_at")
+        if self.provenance is not None and self.provenance.observed_at > self.retrieved_at:
+            raise ValueError("provenance observed_at must not be after retrieved_at")
         return self
 
 

@@ -11,7 +11,7 @@
 ## 结果
 
 - 四个角色均返回可解析 JSON，并通过本地 Pydantic schema 校验。
-- `known_at > as_of` 的未来证据在进入模型之前被剔除。
+- `(available_at or known_at) > as_of` 的未来证据在进入模型之前被剔除。
 - 最终状态成功到达 `HUMAN_REVIEW_REQUIRED`。
 - 产物包含报告、Claim、反证意见、证据快照和 7 个状态事件的审计轨迹。
 - 仓库与生成产物的秘密扫描未发现 API Key 模式。
