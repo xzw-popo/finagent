@@ -392,4 +392,4 @@ def test_cli_version_matches_package_version(
 def test_package_version_matches_project_version() -> None:
     project_file = Path(__file__).parents[1] / "pyproject.toml"
     project = tomllib.loads(project_file.read_text(encoding="utf-8"))
-    assert __version__ == project["project"]["version"] == "0.3.0"
+    assert __version__ == project["project"]["version"] == "0.4.0"

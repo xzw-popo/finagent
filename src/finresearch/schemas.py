@@ -35,7 +35,11 @@ class ResearchRequest(StrictModel):
 
 class EvidenceProvenance(StrictModel):
     provider: str = Field(min_length=1)
-    source_type: Literal["market_quote_snapshot"]
+    source_type: Literal[
+        "market_quote_snapshot",
+        "financial_statement_snapshot",
+        "business_segment_snapshot",
+    ]
     source_endpoint: str = Field(min_length=1)
     symbol: str = Field(min_length=1)
     observed_at: datetime
@@ -59,7 +63,12 @@ class EvidenceProvenance(StrictModel):
 
 
 class Evidence(StrictModel):
-    evidence_type: Literal["document", "market_quote_snapshot"] = "document"
+    evidence_type: Literal[
+        "document",
+        "market_quote_snapshot",
+        "financial_statement_snapshot",
+        "business_segment_snapshot",
+    ] = "document"
     evidence_id: str = Field(min_length=1)
     title: str = Field(min_length=1)
     publisher: str = Field(min_length=1)
@@ -90,13 +99,13 @@ class Evidence(StrictModel):
     def validate_timeline(self) -> Evidence:
         if self.evidence_type == "document" and self.published_at is None:
             raise ValueError("document evidence requires published_at")
-        if self.evidence_type == "market_quote_snapshot":
+        if self.evidence_type != "document":
             if self.provenance is None:
-                raise ValueError("market quote evidence requires provenance")
+                raise ValueError("snapshot evidence requires provenance")
             if self.published_at is not None:
-                raise ValueError("market quote snapshot published_at must be null")
+                raise ValueError("snapshot evidence published_at must be null")
             if self.available_at is None:
-                raise ValueError("market quote evidence requires available_at")
+                raise ValueError("snapshot evidence requires available_at")
         if self.provenance is not None and self.provenance.source_type != self.evidence_type:
             raise ValueError("provenance source_type must match evidence_type")
         if self.published_at is not None and self.published_at > self.known_at:

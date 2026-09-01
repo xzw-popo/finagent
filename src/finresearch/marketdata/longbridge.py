@@ -523,9 +523,17 @@ def _decode_json(data: bytes) -> Any:
         )
         _validate_json_shape(value)
         return value
-    except (UnicodeDecodeError, json.JSONDecodeError, DecimalException, ValueError) as exc:
+    except (
+        UnicodeDecodeError,
+        json.JSONDecodeError,
+        DecimalException,
+        RecursionError,
+        ValueError,
+    ):
+        # Parser errors may embed provider-controlled keys or values. Do not
+        # reflect response fragments into CLI-visible error messages.
         raise LongbridgeCollectionError(
-            "invalid_json", f"Longbridge returned invalid JSON: {exc}"
+            "invalid_json", "Longbridge returned invalid JSON"
         ) from None
 
 

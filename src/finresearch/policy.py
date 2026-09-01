@@ -9,6 +9,7 @@ class NoTradePolicy:
         {
             "read_local_evidence",
             "read_market_quote",
+            "read_financial_statements",
             "call_json_llm",
             "write_local_evidence",
             "write_local_report",

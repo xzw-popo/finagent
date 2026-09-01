@@ -2,7 +2,7 @@
 
 一个“证据优先、显式时点门禁、默认拒绝自动交易”的金融投研多 Agent 项目。
 
-当前产品里程碑是可运行的 V1.2（Python 包版本 `0.3.0`）：四个 LLM 角色分别负责提取、核验、反证与综合，确定性代码负责证据合并、时点过滤、引用检查、状态流转和最终人工复核。V1.1 的 Longbridge 只读行情采集器仍保持窄能力边界；V1.2 新增了对多个证据包的受控、可审计合并。系统不是自由聊天式 swarm，也不会生成或提交订单。
+当前产品里程碑是可运行的 V1.3（Python 包版本 `0.4.0`）：四个 LLM 角色分别负责提取、核验、反证与综合，确定性代码负责只读行情与财报采集、证据合并、时点过滤、引用检查、状态流转和最终人工复核。V1.3 新增 Longbridge 完整三表与可选业务分部证据采集。系统不是自由聊天式 swarm，也不会生成或提交订单。
 
 ## 为什么这样设计
 
@@ -69,6 +69,21 @@ uv run --no-editable finresearch run \
 
 工作流会重新验证原始响应哈希，并把引用的 sidecar 复制到运行目录，因此输出的 `eligible_evidence.json` 可以脱离原采集目录独立重载和校验完整性。
 
+## Longbridge 财报证据
+
+`collect-financials` 对单只证券分别执行固定的利润表、资产负债表和现金流量表命令；任一张表缺失都不会发布半成品。`--segments` 可选采集同频历史业务分部：
+
+```bash
+uv run --no-editable finresearch collect-financials \
+  NVDA.US \
+  --report af \
+  --segments \
+  --region global \
+  --output runs/nvda-financials-2026-09-01
+```
+
+输出包含每条上游响应的原始 JSON、三条（启用分部时四条）标准化 Evidence 和采集 manifest。财年期末、`rpt_date` 等字段只是业务日期，不是可验证的对外披露时间；本版本保守地记录响应接收和整批标准化完成时间，作为后续 `validate/run` 执行 PIT 门禁的依据。详见 [Longbridge 财报接入](docs/longbridge-financials.md)。
+
 ## 合并多个证据包
 
 行情、财报和知识库证据不应手工拼接 JSON。V1.2 用显式合并阶段先对每个输入做结构与哈希完整性校验，再生成一个自包含证据包：
@@ -117,7 +132,7 @@ uv run --no-editable finresearch run \
 
 - `request.json`：研究委托
 - `eligible_evidence.json`：时点与白名单过滤后的 EvidenceBundle
-- 行情证据引用的原始 sidecar：保留原相对路径并再次核对 SHA-256
+- 行情/财报证据引用的原始 sidecar：保留原相对路径并再次核对 SHA-256
 - `rejected_evidence.json`：被拒绝证据及原因
 - `claims.json`：核验后的 Claim
 - `challenge.json`：反证、风险和缺失信息
@@ -126,7 +141,7 @@ uv run --no-editable finresearch run \
 
 报告始终带有 `human_review_required: true` 和 `narrative_requires_human_verification: true`，且终态固定为 `HUMAN_REVIEW_REQUIRED`。所有 LLM 生成的叙述字段均标记为 `UNVERIFIED_NARRATIVE`；Claim ID 绑定不是语义真实性证明，必须逐句人工复核。
 
-V1.2 会校验原文 hash、整条证据记录 hash、行情原始 sidecar hash，以及 `available_at <= as_of`（旧证据回退到 `known_at <= as_of`），但本地 hash 不能证明上游提供的时间戳真实。生产级 PIT 仍需交易所 accession/accepted time、宏观数据 vintage 或可信数据供应商回执，并写入不可变账本。
+V1.3 会校验原文 hash、整条证据记录 hash、行情/财报原始 sidecar hash，以及 `available_at <= as_of`（旧证据回退到 `known_at <= as_of`），但本地 hash 不能证明上游提供的时间戳真实。生产级 PIT 仍需交易所 accession/accepted time、宏观数据 vintage 或可信数据供应商回执，并写入不可变账本。
 
 ## 开发
 
@@ -139,7 +154,7 @@ CI 只运行 mock 与单元测试，不读取或调用任何真实 API Key。
 
 ## 边界
 
-这是研究工程原型，不构成投资建议。V1.2 只包含本地证据处理、人工触发的一次性只读行情快照和受控的证据包合并，不包含持续推送、自动网页抓取、回测、组合优化、账户读取或订单执行。任何未来交易能力都必须作为独立系统，经确定性风控与人工授权后才能接入。
+这是研究工程原型，不构成投资建议。V1.3 只包含本地证据处理、人工触发的一次性只读行情/财报快照和受控的证据包合并，不包含持续推送、自动网页抓取、回测、组合优化、账户读取或订单执行。任何未来交易能力都必须作为独立系统，经确定性风控与人工授权后才能接入。
 
 ## 许可
 

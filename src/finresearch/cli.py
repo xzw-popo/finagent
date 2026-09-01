@@ -13,6 +13,11 @@ from finresearch.evidence_merge import (
     MergeLimits,
     merge_evidence_bundles,
 )
+from finresearch.fundamentals import (
+    FinancialsCollectorConfig,
+    LongbridgeFinancialsCollector,
+    write_financial_collection,
+)
 from finresearch.llm import DeepSeekAdapter, MockAdapter
 from finresearch.marketdata import (
     LongbridgeCollectionError,
@@ -32,6 +37,7 @@ ALLOWED_LLM_MODES = frozenset({"mock", "deepseek"})
 # error (5).
 COLLECT_QUOTE_EXIT_CODES = {
     "invalid_symbol": 2,
+    "invalid_report": 2,
     "binary_not_found": 3,
     "timeout": 4,
     "authentication_required": 5,
@@ -132,6 +138,60 @@ def _parser() -> argparse.ArgumentParser:
         help="Longbridge access region; auto uses the CLI's own detection",
     )
 
+    collect_financials = subparsers.add_parser(
+        "collect-financials",
+        help="collect complete Longbridge financial statements as auditable evidence",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "stable exit codes:\n"
+            "  2 input/configuration error    3 CLI unavailable\n"
+            "  4 timeout                      5 provider/protocol error\n"
+            "  6 no data                      7 partial result\n"
+            "  8 local output error\n"
+            "Runtime errors also report code=<name> and retryable=true|false on stderr."
+        ),
+    )
+    collect_financials.add_argument(
+        "symbol",
+        help="one symbol in explicit <CODE>.<MARKET> format, e.g. NVDA.US or 700.HK",
+    )
+    collect_financials.add_argument(
+        "--report",
+        choices=("af", "saf", "qf"),
+        default="af",
+        help=(
+            "report period: af=annual, saf=semi-annual, qf=quarterly; "
+            "cumul is intentionally unsupported for complete three-table bundles "
+            "(default: af)"
+        ),
+    )
+    collect_financials.add_argument(
+        "--segments",
+        action="store_true",
+        help=(
+            "also collect same-frequency historical business segments"
+        ),
+    )
+    collect_financials.add_argument(
+        "--output",
+        type=Path,
+        required=True,
+        help="new output directory; the path must not already exist",
+    )
+    collect_financials.add_argument(
+        "--timeout",
+        type=float,
+        default=20.0,
+        help="per-command timeout in seconds (0 < timeout <= 120; default: 20)",
+    )
+    collect_financials.add_argument(
+        "--region",
+        choices=("auto", "cn", "global"),
+        default="auto",
+        help="Longbridge access region; auto uses the CLI's own detection",
+    )
+    collect_financials.set_defaults(_selected_parser=collect_financials)
+
     merge_evidence = subparsers.add_parser(
         "merge-evidence",
         help="merge two or more evidence bundles into one self-contained bundle",
@@ -176,23 +236,33 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def _exit_for_collection_error(
-    parser: argparse.ArgumentParser, exc: LongbridgeCollectionError
+    parser: argparse.ArgumentParser,
+    exc: LongbridgeCollectionError,
+    *,
+    command: str = "collect-quote",
 ) -> None:
     status = COLLECT_QUOTE_EXIT_CODES.get(exc.code, 5)
     if status == 2:
         parser.error(f"{exc.code}: {exc}")
     retryable = str(exc.retryable).lower()
+    message = _terminal_safe(str(exc))
     parser.exit(
         status,
-        f"finresearch collect-quote: error code={exc.code} "
-        f"retryable={retryable}: {exc}\n",
+        f"finresearch {command}: error code={exc.code} "
+        f"retryable={retryable}: {message}\n",
     )
 
 
-def _exit_for_local_output_error(parser: argparse.ArgumentParser, exc: Exception) -> None:
+def _exit_for_local_output_error(
+    parser: argparse.ArgumentParser,
+    exc: Exception,
+    *,
+    command: str = "collect-quote",
+) -> None:
+    message = _terminal_safe(str(exc))
     parser.exit(
         LOCAL_OUTPUT_EXIT_CODE,
-        f"finresearch collect-quote: local output error: {exc}\n",
+        f"finresearch {command}: local output error: {message}\n",
     )
 
 
@@ -235,6 +305,51 @@ def main() -> None:
         print(f"available_at: {collection.available_at.isoformat()}")
         for item in collection.evidence:
             print(f"evidence_id: {_terminal_safe(item.evidence_id)}")
+        print("数据来源：长桥证券")
+        return
+
+    if args.command == "collect-financials":
+        command_parser = args._selected_parser
+        policy = NoTradePolicy()
+        try:
+            policy.authorize("read_financial_statements")
+            collector = LongbridgeFinancialsCollector(
+                FinancialsCollectorConfig(
+                    timeout_seconds=args.timeout,
+                    region=args.region,
+                )
+            )
+        except ValueError as exc:
+            command_parser.error(str(exc))
+        try:
+            collection = collector.collect(
+                args.symbol,
+                report=args.report,
+                include_segments=args.segments,
+            )
+        except LongbridgeCollectionError as exc:
+            _exit_for_collection_error(
+                command_parser, exc, command="collect-financials"
+            )
+        try:
+            policy.authorize("write_local_evidence")
+            result = write_financial_collection(collection, args.output)
+        except (OSError, ValueError) as exc:
+            _exit_for_local_output_error(
+                parser, exc, command="collect-financials"
+            )
+        print(f"collected: {len(collection.evidence)} financial evidence record(s)")
+        print(f"evidence: {result.evidence_path.resolve()}")
+        print(f"manifest: {result.manifest_path.resolve()}")
+        print(f"available_at: {collection.available_at.isoformat()}")
+        for item in collection.evidence:
+            print(f"evidence_id: {_terminal_safe(item.evidence_id)}")
+        if not result.durability_confirmed:
+            print(
+                "warning: output is complete, but parent-directory fsync failed; "
+                "crash durability is unconfirmed",
+                file=sys.stderr,
+            )
         print("数据来源：长桥证券")
         return
 

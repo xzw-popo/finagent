@@ -101,6 +101,14 @@ Longbridge 快照 ─┐
 
 输出必须是尚不存在的路径。实现先固定输出父目录，staging 创建、文件写入、发布、回滚与父目录 `fsync` 均使用该 directory fd。私有 staging 内完成有界读取、内容寻址复制、闭环校验和 `fsync` 后，再通过平台原生 no-replace 原语一次发布，并在提交后重新闭环校验。已有文件、目录、有效 symlink 和悬空 symlink 均不会被跟随或覆盖；缺少 `O_NOFOLLOW`/directory-fd 或安全 no-replace 原语时失败关闭，不做不安全降级。
 
+## V1.3：只读财报证据采集
+
+Longbridge 财报适配层位于 LLM 之前，对单个明确市场后缀的 symbol 固定执行 `financial-statement` 的 `IS`、`BS`、`CF` 三条命令。当前 CLI 的 `ALL` 在实测中可能成功返回空数组，因此不作为完整性依据。完整三表只支持 `af/saf/qf`，不将资产负债表缺失的 `cumul` 与其他两表混成一包。任一张表为空、结构错误、币种不一致、最新财期不对齐或请求失败时，整批失败且不发布输出。
+
+每张表生成独立的 `financial_statement_snapshot` Evidence 和独立 raw sidecar，使 provenance 中的哈希只证明一个上游响应。显式启用业务分部时，固定执行同频历史 `business-segments` 并另建 `business_segment_snapshot`。报表的 `yoy_ratio` 与分部的 `yoy_percent` 显式区分百分比单位。发布前会从每个 raw JSON 重放标准化、重建 Evidence，并限制 `evidence.json` 不超过默认 16 MiB 合并入口。全部校验通过后，才在私有 staging 中通过 no-replace 原语一次发布。
+
+财年、报告期、`fp_end` 和 `rpt_date` 均保留在标准化内容中，但不映射为 `published_at/source_event_at`：当前命令没有提供可验证的披露 accepted timestamp。每条证据的 `known_at/retrieved_at` 是该响应完整到达时间，整批 Evidence 共享全部请求解析完成后的 `available_at`。同一财期后来被重述时，新 raw/normalized hash 和 Evidence ID 形成新快照，不覆盖旧证据。
+
 ## 证据与 Claim
 
 `Evidence` 至少包含：
@@ -110,7 +118,7 @@ Longbridge 快照 ─┐
 - 原文 `excerpt` 与 `content_sha256`
 - 覆盖来源、定位、正文和全部时间字段的 `record_sha256`
 - `published_at`、`known_at`、`retrieved_at`，以及可选的 `available_at`
-- 行情证据额外包含 provider、symbol、来源端点、原始/标准化 hash 和 normalizer version
+- 行情/财报快照证据额外包含 provider、symbol、来源端点、原始/标准化 hash 和 normalizer version
 
 `Claim` 至少包含：
 
@@ -137,6 +145,7 @@ V1 使用 `deepseek-v4-flash` 的 Chat Completions JSON mode，并在本地再�
 - V1：本地证据包、受控角色、结构化报告、人工复核。
 - V1.1：Longbridge 只读行情快照、市场证据 provenance 与显式 `available_at`。
 - V1.2：多 EvidenceBundle 完整性校验、内容寻址 sidecar、哈希谱系与原子发布。
+- V1.3：Longbridge 完整三表、可选历史业务分部、财报快照 provenance 与保守 PIT 时间语义。
 - V2：不可变原始文档库、双时间数据模型、持久化 checkpoint、内部评测集。
 - V3：LangGraph 控制平面、并行专家子图、确定性估值/量化沙箱、观测与回放。
 - V4：影子组合与持续监控；完成独立模型验证与合规审批后，才讨论隔离交易网关。

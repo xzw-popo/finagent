@@ -224,6 +224,15 @@ def test_legacy_longbridge_fields_are_normalized(
     assert quote.pre_market is None
 
 
+def test_deeply_nested_json_is_classified_instead_of_escaping_as_recursion_error() -> None:
+    nested = b"[" * 5_000 + b"]" * 5_000
+
+    with pytest.raises(LongbridgeCollectionError) as error:
+        longbridge_module._decode_json(nested)
+
+    assert error.value.code == "invalid_json"
+
+
 @pytest.mark.parametrize(
     ("requested", "response", "expected_code"),
     [
